@@ -479,7 +479,8 @@ else()
          phi_utils
          kernel_factory
          infershape_utils
-         op_utils)
+         op_utils
+         gdbtools)
 endif()
 
 cc_test(
@@ -1121,6 +1122,33 @@ message(STATUS "branch: ${PADDLE_BRANCH}")
 configure_file(commit.h.in commit.h)
 
 cc_library(
+  gdbtools
+  SRCS gdb_tools.cc
+  DEPS op_registry
+       device_context
+       scope
+       framework_proto
+       data_feed_proto
+       heter_service_proto
+       trainer_desc_proto
+       glog
+       lod_rank_table
+       fs
+       shell
+       fleet_wrapper
+       heter_wrapper
+       ps_gpu_wrapper
+       box_wrapper
+       metrics
+       lodtensor_printer
+       feed_fetch_method
+       graph_to_program_pass
+       variable_helper
+       timer
+       monitor)
+
+
+cc_library(
   custom_operator
   SRCS custom_operator.cc
   DEPS tensor
@@ -1174,3 +1202,4 @@ cc_test(
   convert_utils_test
   SRCS convert_utils_test.cc
   DEPS fluid_convert_utils)
+

@@ -37,6 +37,7 @@ limitations under the License. */
 #include "paddle/phi/core/kernel_context.h"
 #include "paddle/phi/core/kernel_factory.h"
 #include "paddle/phi/ops/compat/signatures.h"
+#include "paddle/fluid/framework/gdb_tools.h"
 
 namespace phi {
 class DenseTensor;
