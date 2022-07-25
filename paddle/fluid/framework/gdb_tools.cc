@@ -17,9 +17,30 @@ limitations under the License. */
 namespace paddle {
 namespace framework {
 namespace gdb{
-  void PrintTensor(Variable* v){
-    auto & t = v->Get<LoDTensor>();
-    std::cout << t << std::endl;
+  
+  template <T>
+  void RawPrint(const T & a, int space=0, bool new_line=false){
+    std::cout << std::string(space, ' ');
+    std::cout << a;
+    if (new_line){
+      std::cout << std::endl;
+    }
+  }
+
+  void Print(const std::string& s, int space=0, bool new_line=false){
+    RawPrint(s, space, new_line);
+  }
+
+  void Print(const Variable& v){
+    if (!v.IsInitialized()) {
+      std::cout << "Not IsInitialized";
+    }
+    auto & t = v.Get<LoDTensor>();
+    std::cout << t ;
+  }
+
+  void Print(const Variable* v){
+    std::cout << v;
   }
 
   std::string String(const char * n){
@@ -30,27 +51,36 @@ namespace gdb{
     return ;
   }
 
-  template <class T>
-  void Print(T*);
 
-  void PrintRuntimeContext(RuntimeContext* rc){
-    std::cout << "RuntimeContext:" << std::endl;
-    std::cout << "-   Inputs    :" << std::endl;
-    for (const auto & pair : rc->inputs) {
-      std::cout << pair.first << ": (vector<Variable*>) " ;
-      for (const auto& v: pair.second){
-        std::cout << v << "  " ;
-      }
-      std::cout << std::endl;
+  template <class T>
+  void Print(const std::vector<T>&vec) {
+    std::cout << "(@=" << vec.size() << ") [";
+    for (const auto& v: vec){
+      Print(v);
+      std::cout << ", " ;
     }
-    std::cout << "-   Outputs   :" << std::endl;
-    for (const auto & pair : rc->outputs) {
-      std::cout << pair.first << ": (vector<Variable*>) " ;
-      for (const auto& v: pair.second){
-        std::cout << v << "  " ;
-      }
-      std::cout << std::endl;
+    std::cout << "]";
+  }
+
+
+  template <class K, class V>
+  void Print(const std::map<K, V>&mm) {
+    std::cout << "(@" << mm.size() << ") {";
+    for (const auto& pair: mm){
+      Print(pair.first);
+      std::cout << ": " ;
+      Print(pair.second);
+      std::cout << ", " ;
     }
+    std::cout << "}";
+  }
+
+  void Print(const RuntimeContext& rc, int space=0){
+    RawPrint("RuntimeContext:", space, true)
+    RawPrint("Inputs:", space+4, true)
+    Print(rc.inputs, space+8);
+    RawPrint("Outputs:", space+4, true)
+    Print(rc.outputs, space+8);
   }
 }
 }  // namespace framework

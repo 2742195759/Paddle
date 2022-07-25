@@ -2486,6 +2486,7 @@ void OperatorWithKernel::BuildPhiKernelContext(
     phi::KernelContext* pt_kernel_context) const {
   pt_kernel_context->SetDeviceContext(dev_ctx);
 
+  FUNCTION_KEEPER;
   auto& input_names = kernel_signature_->input_names;
   auto& attr_names = kernel_signature_->attr_names;
   auto& output_names = kernel_signature_->output_names;

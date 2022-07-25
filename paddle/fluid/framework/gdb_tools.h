@@ -36,14 +36,12 @@ DECLARE_bool(benchmark);
 DECLARE_bool(use_mkldnn);
 
 #define FUNCTION_KEEPER \
-paddle::framework::gdb::func_keeper((void*)(paddle::framework::gdb::ToString)); \
-paddle::framework::gdb::func_keeper((void*)(paddle::framework::gdb::PrintTensor)); 
+paddle::framework::gdb::func_keeper((void*)(paddle::framework::gdb::String)); \
 
 namespace paddle {
 namespace framework {
 namespace gdb{
-  void PrintTensor(Variable* v);
-  std::string ToString(const char * n);
+  std::string String(const char * n);
 
   void func_keeper(void *);
   //struct SymbolKeeper{
