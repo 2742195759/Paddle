@@ -655,17 +655,28 @@ def _remove_no_grad_branch_(op_descs,
     """
 
     def _op_can_be_removed_(op_desc, no_grad_set):
+
+        def grad_names(names):
+            return list(
+                filter(lambda name: name.find(core.grad_var_suffix()) != -1,
+                       names))
+
+        def reachable(op_desc, reachable_set):
+            grad_input = grad_names(op_desc.input_arg_names())
+            if len(grad_input): return True
+            return _some_in_set_(grad_input, reachable_set)
+
         out_arg_names = op_desc.output_arg_names()
         if len(out_arg_names) == 0 or _all_in_set_(out_arg_names, no_grad_set):
             return True
-        if _all_in_set_([
-                name for name in op_desc.input_arg_names()
-                if name.find(core.grad_var_suffix()) != -1
-        ], no_grad_set):
+        if _all_in_set_(grad_names(op_desc.input_arg_names()),
+                        no_grad_set) or not reachable(op_desc, reachable_set):
             no_grad_set.update(set(out_arg_names) - target_grad_var_names)
             return True
+        reachable_set.update(set(out_arg_names))
         return False
 
+    reachable_set = set()
     # Remove ops whose outputs are all in no_grad_dict
     target_grad_var_names = set(
         [var.name + core.grad_var_suffix() for var in target_vars])
