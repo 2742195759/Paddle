@@ -15,6 +15,8 @@
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/framework/op_version_registry.h"
 #include "paddle/fluid/operators/tensor_formatter.h"
+#include "paddle/phi/kernels/reduce_mean_kernel.h"
+#include "paddle/phi/backends/all_context.h"
 
 namespace phi {
 class DenseTensor;
@@ -68,7 +70,19 @@ class PrintOp : public framework::OperatorBase {
     auto &in_tensor = in_var->Get<phi::DenseTensor>();
     phi::DenseTensor *out_tensor = out_var->GetMutable<phi::DenseTensor>();
 
-    PrintValue(place, Inputs("In").front(), in_tensor);
+    auto dims = in_tensor.dims();
+    std::vector<int>all_axis; 
+    for (int i=0;i<dims.size();++i){
+      all_axis.push_back(i);
+    }
+    if (platform::is_cpu_place(place)){
+      auto context = reinterpret_cast<const phi::CPUContext*>(phi::DeviceContextPool::Instance().Get(place));
+      PrintValue(place, Inputs("In").front(), phi::Mean<float>(*context, in_tensor, all_axis, false));
+    }
+    else if (platform::is_gpu_place(place)){
+      auto context = reinterpret_cast<const phi::GPUContext*>(phi::DeviceContextPool::Instance().Get(place));
+      PrintValue(place, Inputs("In").front(), phi::Mean<float>(*context, in_tensor, all_axis, false));
+    }
     framework::TensorCopy(in_tensor, place, out_tensor);
     out_tensor->set_lod(in_tensor.lod());
   }

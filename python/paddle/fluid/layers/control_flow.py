@@ -143,7 +143,7 @@ def select_input(inputs, mask):
     return out
 
 
-@static_only
+#@static_only
 def Print(
     input,
     first_n=-1,
@@ -213,6 +213,16 @@ def Print(
            #   - dtype: long
            #   - data: [3 3 3 3 3 3]
     '''
+    if in_dygraph_mode(): 
+        if print_phase == "forward" or print_phase == "both": 
+            print ("Forward\n", input.mean())
+        if print_phase == "backward" or print_phase == "both": 
+            def print_grad(g):
+                print ("Grad:\n", g.mean())
+                return g
+            input.register_hook(print_grad)
+        return input
+        
     check_variable_and_dtype(
         input,
         'input',
