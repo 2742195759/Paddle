@@ -995,6 +995,30 @@ std::pair<std::shared_ptr<Program>, OpResultMap> CloneProgram(
   return std::make_pair(cloned_program, op_result_map);
 }
 
+void AppendSetParameter(Program *forward_program,
+                        const pir::OpResult &result,
+                        const std::string &name) {
+  pir::IrContext *ctx = pir::IrContext::Instance();
+  auto op_info = ctx->GetRegisteredOpInfo(pir::SetParameterOp::name());
+  pir::AttributeMap attribute_map = {
+      {"parameter_name", pir::StrAttribute::get(ctx, name)},
+  };
+  pir::Operation *operation =
+      pir::Operation::Create({result}, attribute_map, {}, op_info);
+  forward_program->block()->push_back(operation);
+}
+
+void AppendSetParameters(Program *forward_program,
+                         const std::vector<pir::OpResult> &outputs_op_result) {
+  int counter = 0;
+  for (const auto &result : outputs_op_result) {
+    std::string parameter_name =
+        std::string("output_") + std::to_string(counter);
+    AppendSetParameter(forward_program, result, parameter_name);
+    counter += 1;
+  }
+}
+
 SplitedResult SplitForwardBackward(
     const Program &program,
     const std::vector<pir::OpResult> &op_result_forward_inputs,
@@ -1103,7 +1127,7 @@ SplitedResult SplitForwardBackward(
     // NOTE(Aurelius84): we should skip insert SetParameterOp repeatly by
     // calling SplitForwardBackward multi-times.
     std::string parameter_name =
-        std::string("output_") + std::to_string(counter);
+        std::string("middle_output_") + std::to_string(counter);
     for (auto it = forward_program->block()->rbegin();
          it != forward_program->block()->rend();
          ++it) {
@@ -1174,10 +1198,9 @@ SplitedResult SplitForwardBackward(
 
   // counter = 0;
   VLOG(4) << "start create forward outputs, inserting set_parameter ops.";
+  // Don't need create output_fn for outputs.
   std::for_each(
       middle_values.begin(), middle_values.end(), create_output_fn_forward);
-  std::for_each(
-      forward_outputs.begin(), forward_outputs.end(), create_output_fn_forward);
 
   // Step2. copy backward ops .
   VLOG(4) << "start copy backward ops";
@@ -1251,6 +1274,7 @@ SplitedResult SplitForwardBackward(
 void BindUtils(pybind11::module *m) {
   m->def("clone_program", CloneProgram);
   m->def("split_program", SplitForwardBackward);
+  m->def("append_output", AppendSetParameters);
   m->def("fake_op_result", FakeOpResult);
   m->def("is_fake_op_result", IsFakeOpResult);
   m->def("set_global_program",

@@ -112,9 +112,9 @@ class RunableProgram:
     """a pir program ready for run_program_op to run. constructed by 3 parts:
     - pir program (pir::Program)
     - in_out_values
-        - input_x values ([pir::OpResult])
-        - input_param values ([pir::OpResult])
-        - output values ([pir::OpResult])
+        - input_x values ([string])
+        - input_param values ([string])
+        - output values ([string])
     - forward_backward_ranges
         - forward_range (tuple(Int, Int)) | None
         - backward_range (tuple(Int, Int)) | None
