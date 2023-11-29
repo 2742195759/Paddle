@@ -14,7 +14,11 @@
 
 import unittest
 
-from dygraph_to_static_utils import Dy2StTestBase, test_ast_only
+from dygraph_to_static_utils import (
+    Dy2StTestBase,
+    test_ast_only,
+    test_pir_only,
+)
 
 import paddle
 from paddle.static import InputSpec
@@ -76,8 +80,17 @@ class CheckOpAttr(Dy2StTestBase):
             'tanh': self.bn_attrs,
             'elementwise_sub': self.sub_attrs,
         }
+        self.pir_infos = {
+            'pd_op.matmul': self.fc_attrs,
+            'pd_op.add': self.fc_attrs,
+            'pd_op.batch_norm': self.bn_attrs,
+            'pd_op.tanh': self.bn_attrs,
+            'pd_op.subtract': self.sub_attrs,
+        }
 
+    # @test_legacy_and_pt_and_pir
     @test_ast_only
+    @test_pir_only
     def test_set_op_attrs(self):
         net = NetWithOpAttr(self.in_num, self.out_num)
         # set attrs
@@ -94,7 +107,11 @@ class CheckOpAttr(Dy2StTestBase):
         )
 
         # assert attrs have be set.
-        self.check_op_attrs(net.forward.concrete_program.main_program)
+        # TODO(@xiongkun): open after save / load supported in pir.
+        if paddle.base.framework.use_pir_api():
+            self.check_op_attrs_pir(net.forward.concrete_program.main_program)
+        else:
+            self.check_op_attrs(net.forward.concrete_program.main_program)
 
         # assert hooks have be clean.
         self.assertEqual(len(net.linear._forward_pre_hooks), 0)
@@ -119,7 +136,28 @@ class CheckOpAttr(Dy2StTestBase):
                         else:
                             self.assertEqual(op_val, expect_val)
 
+    def check_op_attrs_pir(self, main_program):
+        cur_block = main_program.global_block()
+        ops = cur_block.ops
+        for op in ops:
+            if op.name() not in self.pir_infos:
+                continue
+            for attr_name, expect_vals in self.pir_infos[op.name()].items():
+                op_vals = op.attrs()[attr_name]
+                if not isinstance(expect_vals, list):
+                    expect_vals = [expect_vals]
+                    op_vals = [op_vals]
+
+                for op_val, expect_val in zip(op_vals, expect_vals):
+                    if isinstance(op_val, float):
+                        # C++ vs python: 3.799999952316284 ~= 3.8
+                        self.assertAlmostEqual(op_val, expect_val)
+                    else:
+                        self.assertEqual(op_val, expect_val)
+
+    # @test_legacy_and_pt_and_pir
     @test_ast_only
+    @test_pir_only
     def test_set_op_attrs_with_sub_block(self):
         net = NetWithOpAttr(self.in_num, self.out_num)
         # set attrs
@@ -134,12 +172,18 @@ class CheckOpAttr(Dy2StTestBase):
         self.assertEqual(len(net.linear._forward_post_hooks), 1)
 
         # assert attrs have be set.
-        self.check_op_attrs(net.with_cond.concrete_program.main_program)
+        if paddle.base.framework.use_pir_api():
+            self.check_op_attrs_pir(net.with_cond.concrete_program.main_program)
+        else:
+            self.check_op_attrs(net.with_cond.concrete_program.main_program)
 
         # assert hooks have be clean.
         self.assertEqual(len(net.linear._forward_pre_hooks), 0)
         self.assertEqual(len(net.linear._forward_post_hooks), 0)
 
+    # @test_legacy_and_pt_and_pir
+    @test_ast_only
+    @test_pir_only
     def test_type_error(self):
         net = NetWithOpAttr(self.in_num, self.out_num)
         # attrs should be dict
