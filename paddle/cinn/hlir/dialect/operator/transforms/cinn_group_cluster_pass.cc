@@ -205,10 +205,11 @@ struct GroupClusterNode {
               node.alignment_schedule_info.at(op);
         }
 
-        if (pre_sch_node.type !=
-            hlir::framework::pir::ScheduleAlignType::kNone) {
-          this->alignment_schedule_info[op].push_back(pre_sch_node);
-        }
+        // NOTE: don't need alignment any more.
+        // if (pre_sch_node.type !=
+        // hlir::framework::pir::ScheduleAlignType::kNone) {
+        // this->alignment_schedule_info[op].push_back(pre_sch_node);
+        //}
       }
     }
 
@@ -543,9 +544,15 @@ void GetClusterNodeBasicInfo(::pir::Operation* op,
     sch_node->axis_info =
         cinn::dialect::ir::GetVectorAttr(op, "broadcast_axes");
     sch_node->factor_info = cinn::dialect::ir::GetVectorAttr(op, "out_shape");
+  } else if (cluster_node->group_kind == cinn::hlir::framework::kInjective) {
+    cluster_node->loop_ranges =
+        phi::vectorize(op->result(0)
+                           .type()
+                           .dyn_cast<paddle::dialect::DenseTensorType>()
+                           .dims());
   } else {
     PADDLE_THROW(phi::errors::Unimplemented(
-        "only support elementwise, broadcast, reduce type"));
+        "only support elementwise, broadcast, injective, reduce type"));
   }
 }
 
@@ -574,16 +581,11 @@ bool CanOpMergeNode(
     return false;
   }
 
-  // TODO(phlrain): need update here
-  // different loop range can merge, like [128, 128, 1], with [128, 128]
-  if ((cinn::hlir::framework::pir::CompatibleInfo::OpKind(*cur_op) !=
-       cinn::hlir::framework::kBroadcast) &&
-      (op_path_info.at(cur_op).loop_ranges !=
-       op_path_info.at(pre_op).loop_ranges)) {
-    return false;
+  if (cinn::hlir::framework::pir::CompatibleInfo::OpKind(*cur_op) <=
+      cinn::hlir::framework::kInjective) {
+    return true;
   }
-
-  return true;
+  return false;
 }
 
 bool ShouldOutputPreNode(

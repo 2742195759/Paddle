@@ -1039,7 +1039,7 @@ std::shared_ptr<OpStrategy> StrategyForTranspose(
       for (int idy = idx + 1; idy < axis.size(); ++idy) {
         CHECK_NE(axis[idx], axis[idy]) << "axis can't repeat!";
       }
-      CHECK_EQ(output_shapes[0][idx], input_shape[axis[idx]].as_int32())
+      CHECK_EQ(output_shapes[0][idx], input_shape[axis[idx]].as_int64())
           << "output shape is not equal! Please check!\n";
     }
   } else {
