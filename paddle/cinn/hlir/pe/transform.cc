@@ -867,7 +867,7 @@ std::vector<Expr> InferShapeLayoutTransform(
         int src_sub_index = (*split_index_map)[i][1];
         int factor = (*split_index_map)[i][2];
         CHECK_GE(input_shapes.size(), src_sub_index);
-        CHECK_EQ(input_shapes[src_sub_index].as_int32(), factor);
+        CHECK_EQ(input_shapes[src_sub_index].as_int64(), factor);
         output_shape[i] =
             cinn::common::AutoSimplify(input_shapes[src_prim_index] * factor);
       } else if ((*split_index_map)[i].size() == 1) {
@@ -1014,7 +1014,7 @@ ir::Tensor Slice(const ir::Tensor& A,
                  const std::string& output_name) {
   std::vector<int> input_shape;
   for (const auto& shape : A->shape) {
-    input_shape.emplace_back(shape.as_int32());
+    input_shape.emplace_back(shape.as_int64());
   }
   std::vector<int> new_starts(starts);
   for (int i = 0; i < axes.size(); i++) {
@@ -1132,7 +1132,7 @@ ir::Tensor SliceAssign(const ir::Tensor& input,
 
   std::vector<int> input_shape;
   for (const auto& shape : input->shape) {
-    input_shape.emplace_back(shape.as_int32());
+    input_shape.emplace_back(shape.as_int64());
   }
   std::vector<int> new_starts(starts);
   std::vector<int> new_ends(ends);

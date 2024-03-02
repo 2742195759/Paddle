@@ -711,24 +711,20 @@ static bool IsAdjecent(const ir::Expr& upstream, const ir::Expr& downstream) {
   return false;
 }
 
-std::pair<int, int> SearchAdjacentInjectives(
+std::optional<std::pair<int, int>> SearchAdjacentInjectives(
     const std::vector<OpPatternKind>& op_patterns,
     const std::vector<ir::Expr>& funcs) {
-  int upper_stream = NOT_FOUND;
-  int down_stream = NOT_FOUND;
   for (int i = 0; i < op_patterns.size(); i++) {
     if (op_patterns[i] <= OpPatternKind::kInjective) {
       for (int j = i + 1; j < op_patterns.size(); j++) {
         if (op_patterns[j] <= OpPatternKind::kInjective &&
             IsAdjecent(funcs[i], funcs[j])) {
-          upper_stream = i;
-          down_stream = j;
-          return std::make_pair(upper_stream, down_stream);
+          return std::make_pair(i, j);
         }
       }
     }
   }
-  return std::make_pair(upper_stream, down_stream);
+  return std::nullopt;
 }
 
 ir::Expr TrivalFusion(ir::Expr upper, ir::Expr down) {
@@ -757,12 +753,14 @@ std::vector<ir::Expr> OpInlineFusion(const GroupPtr& group,
 
   while (true) {
     VLOG(4) << "Start search for Injective + Injective";
-    std::pair<int, int> idx_pair = SearchAdjacentInjectives(op_patterns, funcs);
-    int upper_stream = idx_pair.first, down_stream = idx_pair.second;
-    if (upper_stream == NOT_FOUND) {
+    std::optional<std::pair<int, int>> opt_idx_pair =
+        SearchAdjacentInjectives(op_patterns, funcs);
+    if (!opt_idx_pair.has_value()) {
       VLOG(4) << "Not found Injective + Injective, break.";
       break;
     }
+    int upper_stream = opt_idx_pair.value().first,
+        down_stream = opt_idx_pair.value().second;
     VLOG(4) << "Find Injective + Injective" << upper_stream << " "
             << down_stream;
     ir::Expr func_body = TrivalFusion(funcs[upper_stream], funcs[down_stream]);
