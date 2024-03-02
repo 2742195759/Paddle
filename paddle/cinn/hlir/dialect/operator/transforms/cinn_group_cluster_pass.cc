@@ -588,27 +588,6 @@ bool CanOpMergeNode(
   return false;
 }
 
-bool ShouldOutputPreNode(
-    const std::unordered_map<::pir::Operation*, GroupClusterNode>& op_path_info,
-    ::pir::Operation* pre_op,
-    ::pir::Operation* cur_op) {
-  if (cinn::hlir::framework::pir::CompatibleInfo::OpKind(*pre_op) ==
-      cinn::hlir::framework::kReduction) {
-    return false;
-  }
-
-  // TODO(phlrain): need update here
-  // different loop range can merge, like [128, 128, 1], with [128, 128]
-  if ((cinn::hlir::framework::pir::CompatibleInfo::OpKind(*cur_op) !=
-       cinn::hlir::framework::kBroadcast) &&
-      (op_path_info.at(cur_op).loop_ranges !=
-       op_path_info.at(pre_op).loop_ranges)) {
-    return true;
-  }
-
-  return false;
-}
-
 std::vector<GroupClusterNode> NodeMergeWithNode(
     const std::vector<GroupClusterNode>& first_stage_output) {
   // stage 2 merge
@@ -714,16 +693,6 @@ std::vector<GroupClusterNode> OpMergeWithOp(cinn::dialect::GroupOp group_op) {
       if (CanOpMergeNode(op_path, pre_op, op)) {
         cluster_node.MergePreNode(op_path.at(pre_op), sch_node);
       }
-
-      // TODO(phlrain): should remove this strategy
-      if (ShouldOutputPreNode(op_path, pre_op, op)) {
-        // Can not merge here, should output pre_op cluster Node
-        if (!first_output_ops.count(pre_op)) {
-          first_stage_output.push_back(op_path[pre_op]);
-          first_output_ops.insert(pre_op);
-        }
-        continue;
-      }
     }
 
     op_list.push_back(op);
@@ -733,6 +702,8 @@ std::vector<GroupClusterNode> OpMergeWithOp(cinn::dialect::GroupOp group_op) {
             cinn::hlir::framework::kReduction) {
       // TODO(phlrain): yiled output no nedd to push into first stage output,
       // Update here
+      VLOG(4) << "Split Group by yield output ops: "
+              << yield_output_ops.count(op);
       if (!first_output_ops.count(op)) {
         first_stage_output.push_back(op_path[op]);
         first_output_ops.insert(op);
@@ -740,6 +711,7 @@ std::vector<GroupClusterNode> OpMergeWithOp(cinn::dialect::GroupOp group_op) {
     }
   }
 
+  VLOG(4) << "first stage output size " << first_stage_output.size();
   return first_stage_output;
 }
 

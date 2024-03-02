@@ -605,17 +605,19 @@ struct TrivalOp {
 
      private:
       void Visit(const ir::Load* load, Expr* op) override {
-        // VLOG(4) << "substitude cmp: " << target.ptr() << " vs " << load;
         if (load == target.ptr()) {
           VLOG(4) << "substitude find!";
           *op = dest;
+        } else {
+          IRMutator::Visit(load, op);
         }
       }
       void Visit(const ir::Store* store, Expr* op) override {
-        VLOG(4) << "substitude cmp: " << target.ptr() << " vs " << store;
         if (store == target.ptr()) {
           VLOG(4) << "substitude find!";
           *op = dest;
+        } else {
+          IRMutator::Visit(store, op);
         }
       }
 
@@ -727,6 +729,23 @@ std::optional<std::pair<int, int>> SearchAdjacentInjectives(
   return std::nullopt;
 }
 
+void RemoveUseless(int upstream,
+                   std::vector<OpPatternKind>* op_patterns,
+                   std::vector<ir::Expr>* funcs) {
+  bool keep = false;
+  for (int i = 0; i < op_patterns->size(); i++) {
+    if (i != upstream && IsAdjecent(funcs->at(upstream), funcs->at(i))) {
+      keep = true;
+    }
+  }
+  if (!keep) {
+    funcs->erase(funcs->begin() + upstream);
+    op_patterns->erase(op_patterns->begin() + upstream);
+    VLOG(4) << "RemoveUseless: " << upstream
+            << ", size of remains: " << funcs->size();
+  }
+}
+
 ir::Expr TrivalFusion(ir::Expr upper, ir::Expr down) {
   VLOG(4) << "TrivalFusion begin.";
   TrivalOp upper_op(upper);
@@ -769,11 +788,9 @@ std::vector<ir::Expr> OpInlineFusion(const GroupPtr& group,
     auto update_funcs_and_op_patterns = [&]() {
       funcs[down_stream] = func_body;
       op_patterns[down_stream] = OpPatternKind::kInjective;
-
-      funcs.erase(funcs.begin() + upper_stream);
-      op_patterns.erase(op_patterns.begin() + upper_stream);
     };
     update_funcs_and_op_patterns();
+    RemoveUseless(upper_stream, &op_patterns, &funcs);
   }
   return funcs;
 }
