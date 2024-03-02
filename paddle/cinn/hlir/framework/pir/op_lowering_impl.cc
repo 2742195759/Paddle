@@ -472,50 +472,56 @@ std::vector<ir::LoweredFunc> OpLowererImpl::LowerMapExpr(
                      &group_func_args);
 }
 
+struct MappingLoadExprToExprMutator : public ir::IRMutator<> {
+  explicit MappingLoadExprToExprMutator(const ir::Expr& target,
+                                        const ir::Expr& dest)
+      : target(target), dest(dest) {}
+
+  void operator()(Expr* expr) { IRMutator::Visit(expr, expr); }
+
+ private:
+  void Visit(const ir::Load* load, Expr* op) override {
+    if (load == target.ptr()) {
+      VLOG(4) << "substitude find!";
+      *op = dest;
+    } else {
+      IRMutator::Visit(load, op);
+    }
+  }
+  void Visit(const ir::Store* store, Expr* op) override {
+    if (store == target.ptr()) {
+      VLOG(4) << "substitude find!";
+      *op = dest;
+    } else {
+      IRMutator::Visit(store, op);
+    }
+  }
+
+ private:
+  ir::Expr target;
+  ir::Expr dest;
+};
+
 std::vector<OpPatternKind> GetOpPatternVector(
-    const std::vector<::pir::Operation*> ops) {
-  auto& op_pattern_map =
+    const std::vector<::pir::Operation*>& ops) {
+  const auto& op_pattern_map =
       Operator::GetAttrs<cinn::hlir::framework::OpPatternKind>("OpPattern");
   std::vector<OpPatternKind> op_patterns;
+  const auto ConvertToPattern = [&op_pattern_map](const ::pir::Operation* op) {
+    const std::string cinn_op_name = CompatibleInfo::OpName(*op);
+    const hlir::framework::Operator* cinn_op = Operator::Get(cinn_op_name);
+    return op_pattern_map[cinn_op];
+  };
   std::transform(ops.begin(),
                  ops.end(),
                  std::back_inserter(op_patterns),
-                 [&op_pattern_map](const ::pir::Operation* op) {
-                   std::string cinn_op_name = CompatibleInfo::OpName(*op);
-                   const hlir::framework::Operator* cinn_op =
-                       Operator::Get(cinn_op_name);
-                   return op_pattern_map[cinn_op];
-                 });
-  for (auto op_ptn : op_patterns) {
-    VLOG(4) << "OpPattern is :" << op_ptn;
+                 ConvertToPattern);
+  if (VLOG_IS_ON(4)) {
+    for (const auto& op_ptn : op_patterns) {
+      VLOG(4) << "OpPattern is :" << op_ptn;
+    }
   }
   return op_patterns;
-}
-
-static const int NOT_FOUND = -1;
-
-std::set<Expr*> CollectLoadStoreExprPointer(
-    Expr* x, std::function<bool(const Expr*)>&& teller) {
-  if (!x->defined()) return std::set<Expr*>();
-  struct Mutator : public ir::IRMutator<> {
-    std::function<bool(const Expr*)> teller;
-    std::set<Expr*> exprs;
-    explicit Mutator(std::function<bool(const Expr*)>&& teller)
-        : teller(std::move(teller)) {}
-
-    void operator()(Expr* expr) { ir::IRMutator<Expr*>::Visit(expr, expr); }
-    void Visit(const ir::Store* op, Expr* expr) override {
-      VLOG(4) << "collect load store expr: start visit " << *expr;
-      if (teller(expr)) {
-        VLOG(4) << "collect!";
-        exprs.insert(expr);
-      }
-    }
-  };
-
-  Mutator mutator(std::move(teller));
-  mutator(x);
-  return mutator.exprs;
 }
 
 template <class A, class C, class Func>
@@ -596,35 +602,6 @@ struct TrivalOp {
   static void SubstitudeTargetExprWithDestExpr(const ir::Expr& target,
                                                const ir::Expr& dest,
                                                ir::Expr* source) {
-    struct MappingLoadExprToExprMutator : public ir::IRMutator<> {
-      explicit MappingLoadExprToExprMutator(const ir::Expr& target,
-                                            const ir::Expr& dest)
-          : target(target), dest(dest) {}
-
-      void operator()(Expr* expr) { IRMutator::Visit(expr, expr); }
-
-     private:
-      void Visit(const ir::Load* load, Expr* op) override {
-        if (load == target.ptr()) {
-          VLOG(4) << "substitude find!";
-          *op = dest;
-        } else {
-          IRMutator::Visit(load, op);
-        }
-      }
-      void Visit(const ir::Store* store, Expr* op) override {
-        if (store == target.ptr()) {
-          VLOG(4) << "substitude find!";
-          *op = dest;
-        } else {
-          IRMutator::Visit(store, op);
-        }
-      }
-
-     private:
-      ir::Expr target;
-      ir::Expr dest;
-    };
     VLOG(4) << "Start SubstitudeTargetExprWithDestExpr";
     MappingLoadExprToExprMutator mapper(target, dest);
     mapper(source);
@@ -716,11 +693,15 @@ static bool IsAdjecent(const ir::Expr& upstream, const ir::Expr& downstream) {
 std::optional<std::pair<int, int>> SearchAdjacentInjectives(
     const std::vector<OpPatternKind>& op_patterns,
     const std::vector<ir::Expr>& funcs) {
+  const auto& IsTrivialKind = [](OpPatternKind kind) {
+    return kind == OpPatternKind::kElementWise ||
+           kind == OpPatternKind::kBroadcast ||
+           kind == OpPatternKind::kInjective;
+  };
   for (int i = 0; i < op_patterns.size(); i++) {
-    if (op_patterns[i] <= OpPatternKind::kInjective) {
+    if (IsTrivialKind(op_patterns[i])) {
       for (int j = i + 1; j < op_patterns.size(); j++) {
-        if (op_patterns[j] <= OpPatternKind::kInjective &&
-            IsAdjecent(funcs[i], funcs[j])) {
+        if (IsTrivialKind(op_patterns[j]) && IsAdjecent(funcs[i], funcs[j])) {
           return std::make_pair(i, j);
         }
       }

@@ -588,6 +588,76 @@ bool CanOpMergeNode(
   return false;
 }
 
+template <typename ConditionFunc, typename ElementType>
+std::optional<std::pair<int, int>> ForRangeSearch(
+    const ConditionFunc& condition_fn,
+    const std::vector<ElementType>& elements) {
+  for (int i = 0; i < elements.size(); ++i) {
+    for (int j = i + 1; j < elements.size(); ++j) {
+      if (condition_fn(elements[i], elements[j])) {
+        return std::make_pair(i, j);
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+template <typename MergeFunc, typename ElementType>
+void MergeAndRemove(const MergeFunc& merge_fn,
+                    const std::pair<int, int>& range,
+                    std::vector<ElementType>* elements) {
+  const auto& merged =
+      merge_fn(elements->at(range.first), elements->at(range.second));
+  elements->erase(elements->begin() + range.second);
+  elements->erase(elements->begin() + range.first);
+  elements->push_back(merged);
+}
+
+template <typename ConditionFunc, typename MergeFunc, typename ElementType>
+void FindPatternAndMerge(const ConditionFunc& condition_fn,
+                         const MergeFunc& merge_fn,
+                         std::vector<ElementType>* elements) {
+  while (true) {
+    auto range = ForRangeSearch(condition_fn, *elements);
+    if (range.has_value()) {
+      VLOG(4) << "FindPatternAndMerge: find and merge!";
+      MergeAndRemove(merge_fn, range.value(), elements);
+    } else {
+      break;
+    }
+  }
+}
+
+bool OutputShapeTheSame(const GroupClusterNode& a, const GroupClusterNode& b) {
+  return a.loop_ranges == b.loop_ranges;
+}
+
+bool CanHorizontalMerge(const GroupClusterNode& a, const GroupClusterNode& b) {
+  const auto& IsTrivialKind = [](OpPatternKind kind) {
+    return kind == OpPatternKind::kElementWise ||
+           kind == OpPatternKind::kBroadcast ||
+           kind == OpPatternKind::kInjective;
+  };
+  return IsTrivialKind(a.group_kind) && IsTrivialKind(b.group_kind) &&
+         OutputShapeTheSame(a, b);
+}
+
+GroupClusterNode HorizontalMerge(const GroupClusterNode& a,
+                                 const GroupClusterNode& b) {
+  GroupClusterNode res = a;
+  res.MergeNode(b, ScheduleInfoNode());
+  return res;
+}
+
+std::vector<GroupClusterNode> HorizontalMergePass(
+    const std::vector<GroupClusterNode>& last_stage_output) {
+  std::vector<GroupClusterNode> third_stage_output = last_stage_output;
+  FindPatternAndMerge(CanHorizontalMerge, HorizontalMerge, &third_stage_output);
+  VLOG(4) << "After HorizontalMergePass, cluster size is = "
+          << third_stage_output.size();
+  return third_stage_output;
+}
+
 std::vector<GroupClusterNode> NodeMergeWithNode(
     const std::vector<GroupClusterNode>& first_stage_output) {
   // stage 2 merge
@@ -700,7 +770,7 @@ std::vector<GroupClusterNode> OpMergeWithOp(cinn::dialect::GroupOp group_op) {
     if (yield_output_ops.count(op) ||
         cinn::hlir::framework::pir::CompatibleInfo::OpKind(*op) ==
             cinn::hlir::framework::kReduction) {
-      // TODO(phlrain): yiled output no nedd to push into first stage output,
+      // TODO(phlrain): yiled output no need to push into first stage output,
       // Update here
       VLOG(4) << "Split Group by yield output ops: "
               << yield_output_ops.count(op);
@@ -725,17 +795,19 @@ std::vector<GroupClusterNode> GroupSplit(cinn::dialect::GroupOp group_op) {
 
   // stage 2
   auto second_stage_output = NodeMergeWithNode(first_stage_output);
-
   if (second_stage_output.size() == 1) {
     return second_stage_output;
   }
 
+  // stage 3
+  auto third_stage_output = HorizontalMergePass(second_stage_output);
+
   std::vector<std::vector<int>> pre_ids_info;
-  auto out_id_list = SortNodeList(&second_stage_output, &pre_ids_info);
+  auto out_id_list = SortNodeList(&third_stage_output, &pre_ids_info);
 
   std::vector<GroupClusterNode> sorted_out;
   for (auto id : out_id_list) {
-    sorted_out.push_back(second_stage_output[id]);
+    sorted_out.push_back(third_stage_output[id]);
   }
 
   return sorted_out;
