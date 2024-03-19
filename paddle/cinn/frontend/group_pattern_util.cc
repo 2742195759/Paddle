@@ -518,7 +518,7 @@ class ShardableAxesInferer {
         iter->second =
             ShardableAxesUtil::GetCommonShardableAxes(iter->second, sa);
       } else {
-        iter->second = sa;
+        value2shardable_axes[value] = sa;
       }
     };
     reversed_walker(sinks.begin(), sinks.end(), [&](const auto* op) {
@@ -1032,7 +1032,7 @@ class StmtFusionHelper {
       });
       return num_injective_src_outputs == 0;
     };
-    const auto Cmp = [&](const auto* lhs, const auto& rhs) {
+    const auto Cmp = [&](const auto* lhs, const auto* rhs) {
       return this->GetOrderValue4Op(lhs) < this->GetOrderValue4Op(rhs);
     };
     common::BfsWalker<const StmtPattern*> reverse_walker(VisitInputStmt);
@@ -1218,7 +1218,7 @@ class ClusteringEngine {
         clustering_policy_(clustering_policy) {}
 
   ClusteringResult ClusterOps() {
-    VLOG(4) << "Raw Parsing";
+    VLOG(4) << "- Raw Parsing";
     const std::vector<StmtPattern> stmt_patterns = [&] {
       GroupPattern raw_parsed =
           StmtFusionHelper(ops_, shardable_axes_inferer_).FuseToGroupPattern();
@@ -1227,20 +1227,19 @@ class ClusteringEngine {
       CHECK(std::holds_alternative<std::vector<StmtPattern>>(raw_parsed));
       return std::get<std::vector<StmtPattern>>(raw_parsed);
     }();
-    VLOG(4) << "Making TopoOrderFinder of Op";
     auto OrderValue4Op = MakeTopoOrderFinderOfOp(ops_);
-    VLOG(4) << "Making Acyclic Same Cluster Bfs Walker";
+    VLOG(4) << "- Making Acyclic Same Cluster Bfs Walker";
     common::BfsWalker<const StmtPattern*> walker =
         MakeAcyclicSameClusterBfsWalker(stmt_patterns);
     std::vector<std::vector<const StmtPattern*>> stmts_list;
-    VLOG(4) << "Visit Connect Component";
+    VLOG(4) << "- Visit Connect Component";
     VisitConnectedComponent(walker, stmt_patterns, [&](auto stmt_ptrs) {
       SortStmtPtrs(&stmt_ptrs, OrderValue4Op);
       stmts_list.push_back(stmt_ptrs);
     });
-    VLOG(4) << "Sort Stmts List";
+    VLOG(4) << "- Sort Stmts List";
     SortStmtsList(&stmts_list, OrderValue4Op);
-    VLOG(4) << "Make Clustering Result";
+    VLOG(4) << "- Make Clustering Result";
     return clustering_policy_->MakeClusteringResult(stmts_list);
   }
 
@@ -1740,31 +1739,33 @@ class ClusteringEngine {
         stmts->push_back(stmt);
       }
     };
-    std::unordered_map<const StmtPattern*, std::vector<const StmtPattern*>>
-        stmt2inputs;
-    std::unordered_map<const StmtPattern*, std::vector<const StmtPattern*>>
-        stmt2outputs;
+    using EdgeCache =
+        std::unordered_map<const StmtPattern*, std::vector<const StmtPattern*>>;
+    auto stmt2inputs = std::make_shared<EdgeCache>();
+    auto stmt2outputs = std::make_shared<EdgeCache>();
     for (const auto& stmt : stmt_patterns) {
-      (void)stmt2inputs[&stmt];
+      (void)(*stmt2inputs)[&stmt];
       VisitInput(&stmt, [&](const auto* input) {
-        TryPushBack(input, &stmt2inputs[&stmt]);
+        TryPushBack(input, &(*stmt2inputs)[&stmt]);
       });
-      (void)stmt2outputs[&stmt];
+      (void)(*stmt2outputs)[&stmt];
       VisitOutput(&stmt, [&](const auto* output) {
-        TryPushBack(output, &stmt2outputs[&stmt]);
+        TryPushBack(output, &(*stmt2outputs)[&stmt]);
       });
     }
-    using NodeVisitor = std::function<void(const StmtPattern*)>;
-    auto VisitCachedInput = [map = std::move(stmt2inputs)](
-                                const auto* stmt, const NodeVisitor& DoEach) {
+
+    auto VisitCachedInput = [stmt2inputs](const auto* stmt,
+                                          const NodeVisitor& DoEach) {
+      const auto& map = (*stmt2inputs);
       const auto& iter = map.find(stmt);
       if (iter == map.end()) return;
       for (const auto* input : iter->second) {
         DoEach(input);
       }
     };
-    auto VisitCachedOutput = [map = std::move(stmt2outputs)](
-                                 const auto* stmt, const NodeVisitor& DoEach) {
+    auto VisitCachedOutput = [stmt2outputs](const auto* stmt,
+                                            const NodeVisitor& DoEach) {
+      const auto& map = (*stmt2outputs);
       const auto& iter = map.find(stmt);
       if (iter == map.end()) return;
       for (const auto* output : iter->second) {
@@ -2018,12 +2019,4 @@ ClusteringResult ClusterOps(
   VLOG(4) << "Engine calls ClusterOps()";
   return engine.ClusterOps();
 }
-
-GroupPattern GenerateGroupPatternFromOpList(
-    const std::vector<const pir::Operation*>& ops,
-    const std::shared_ptr<ShardableAxesProvider>& shardable_axes_provider) {
-  ShardableAxesInferer inferer(shardable_axes_provider);
-  return StmtFusionHelper(ops, inferer).FuseToGroupPattern();
-}
-
 }  // namespace cinn::frontend
